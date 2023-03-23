@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from PIL import Image
 import torchvision.transforms as transforms
+import cv2
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
@@ -47,6 +48,8 @@ if __name__ == "__main__":
     )
 
     img = np.array(Image.open("/kaggle/input/sample-lane-image/pic1.jpg"))
+
+    img = cv2.resize(img, (1600, 320), cv2.INTER_LINEAR)
     
     img_normalized = transform_norm(img).float()
     img_normalized = img_normalized.unsqueeze_(0)
