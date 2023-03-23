@@ -59,5 +59,5 @@ if __name__ == "__main__":
         pred = net(imgs)
         print("loc_row: ", pred['loc_row'].shape)
         print("loc_col: ", pred['loc_col'].shape)
-        print("exist_roe: ", pred['exist_roe'].shape)
+        print("exist_row: ", pred['exist_row'].shape)
         print("exist_col: ", pred['exist_col'].shape)
