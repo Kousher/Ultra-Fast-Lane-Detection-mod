@@ -61,3 +61,4 @@ if __name__ == "__main__":
         print("loc_col: ", pred['loc_col'].shape)
         print("exist_row: ", pred['exist_row'].shape)
         print("exist_col: ", pred['exist_col'].shape)
+        print(pred)
