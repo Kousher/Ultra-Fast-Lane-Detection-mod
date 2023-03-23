@@ -70,6 +70,8 @@ def generate_segmentation_and_train_list(root, line_txt, names):
     """
     train_gt_fp = open(os.path.join(root,'train_gt.txt'),'w')
     
+    cache_dict = {}
+
     for i in tqdm.tqdm(range(len(line_txt))):
 
         tmp_line = line_txt[i]
@@ -88,50 +90,91 @@ def generate_segmentation_and_train_list(root, line_txt, names):
 
         label_path = names[i][:-3]+'png'
         label = np.zeros((720,1280),dtype=np.uint8)
+        all_points = np.zeros((4,56,2), dtype=np.float)
+        the_anno_row_anchor = np.array([160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260,
+       270, 280, 290, 300, 310, 320, 330, 340, 350, 360, 370,
+       380, 390, 400, 410, 420, 430, 440, 450, 460, 470, 480,
+       490, 500, 510, 520, 530, 540, 550, 560, 570, 580, 590,
+       600, 610, 620, 630, 640, 650, 660, 670, 680, 690, 700,
+       710])
+        all_points[:,:,1] = np.tile(the_anno_row_anchor, (4,1))
+        all_points[:,:,0] = -99999
         bin_label = [0,0,0,0]
         if len(k_neg) == 1:                                           # for only one lane in the left
             which_lane = np.where(ks == k_neg[0])[0][0]
             draw(label,lines[which_lane],2)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[1,yy,0] = xx
             bin_label[1] = 1
         elif len(k_neg) == 2:                                         # for two lanes in the left
             which_lane = np.where(ks == k_neg[1])[0][0]
             draw(label,lines[which_lane],1)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[0,yy,0] = xx
             which_lane = np.where(ks == k_neg[0])[0][0]
             draw(label,lines[which_lane],2)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[1,yy,0] = xx
             bin_label[0] = 1
             bin_label[1] = 1
         elif len(k_neg) > 2:                                           # for more than two lanes in the left, 
             which_lane = np.where(ks == k_neg[1])[0][0]                # we only choose the two lanes that are closest to the center
             draw(label,lines[which_lane],1)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[0,yy,0] = xx
             which_lane = np.where(ks == k_neg[0])[0][0]
             draw(label,lines[which_lane],2)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[1,yy,0] = xx
             bin_label[0] = 1
             bin_label[1] = 1
 
         if len(k_pos) == 1:                                            # For the lanes in the right, the same logical is adopted.
             which_lane = np.where(ks == k_pos[0])[0][0]
             draw(label,lines[which_lane],3)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[2,yy,0] = xx
             bin_label[2] = 1
         elif len(k_pos) == 2:
             which_lane = np.where(ks == k_pos[1])[0][0]
             draw(label,lines[which_lane],3)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[2,yy,0] = xx
             which_lane = np.where(ks == k_pos[0])[0][0]
             draw(label,lines[which_lane],4)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[3,yy,0] = xx
             bin_label[2] = 1
             bin_label[3] = 1
         elif len(k_pos) > 2:
             which_lane = np.where(ks == k_pos[-1])[0][0]
             draw(label,lines[which_lane],3)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[2,yy,0] = xx
             which_lane = np.where(ks == k_pos[-2])[0][0]
             draw(label,lines[which_lane],4)
+            xx = np.array(lines[which_lane][::2])
+            yy = ((np.array(lines[which_lane][1::2]) - 160) / 10).astype(int)
+            all_points[3,yy,0] = xx
             bin_label[2] = 1
             bin_label[3] = 1
 
         cv2.imwrite(os.path.join(root,label_path),label)
 
-
+        cache_dict[names[i]] = all_points.tolist()
         train_gt_fp.write(names[i] + ' ' + label_path + ' '+' '.join(list(map(str,bin_label))) + '\n')
     train_gt_fp.close()
+    with open(os.path.join(root, 'tusimple_anno_cache.json'), 'w') as f:
+        json.dump(cache_dict, f)
 
 def get_args():
     parser = argparse.ArgumentParser()

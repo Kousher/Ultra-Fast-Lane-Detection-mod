@@ -39,7 +39,7 @@ void help(void)
 }
 
 
-void read_lane_file(const string &file_name, vector<vector<Point2f> > &lanes);
+void read_lane_file(const string &file_name, vector<vector<Point2f> > &lanes, float x_factor, float y_factor);
 void visualize(string &full_im_name, vector<vector<Point2f> > &anno_lanes, vector<vector<Point2f> > &detect_lanes, vector<int> anno_match, int width_lane);
 
 int main(int argc, char **argv)
@@ -57,7 +57,9 @@ int main(int argc, char **argv)
 	int oc;
 	bool show = false;
 	int frame = 1;
-	while((oc = getopt(argc, argv, "ha:d:i:l:w:t:c:r:sf:o:")) != -1)
+	double x_factor = 1.0;
+	double y_factor = 1.0;
+	while((oc = getopt(argc, argv, "ha:d:i:l:w:t:c:r:sf:o:x:y:")) != -1)
 	{
 		switch(oc)
 		{
@@ -97,6 +99,12 @@ int main(int argc, char **argv)
 			case 'o':
 				output_file = optarg;
 				break;
+			case 'x':
+				x_factor = atof(optarg);
+				break;
+			case 'y':
+				y_factor = atof(optarg);
+				break;
 		}
 	}
 
@@ -110,6 +118,8 @@ int main(int argc, char **argv)
 	cout<<"iou_threshold: "<<iou_threshold<<endl;
 	cout<<"im_width: "<<im_width<<endl;
 	cout<<"im_height: "<<im_height<<endl;
+	cout<<"x_factor: "<<x_factor<<endl;
+	cout<<"y_factor: "<<y_factor<<endl;
 	cout<<"-----------------------------------"<<endl;
 	cout<<"Evaluating the results..."<<endl;
 	// this is the max_width and max_height
@@ -120,7 +130,6 @@ int main(int argc, char **argv)
 		help();
 		return 1;
 	}
-
 
 	ifstream ifs_im_list(list_im_file, ios::in);
 	if(ifs_im_list.fail())
@@ -154,18 +163,10 @@ int main(int argc, char **argv)
 		string detect_file_name = detect_dir + sub_txt_name;
 		vector<vector<Point2f> > anno_lanes;
 		vector<vector<Point2f> > detect_lanes;
-		read_lane_file(anno_file_name, anno_lanes);
-		read_lane_file(detect_file_name, detect_lanes);
-		//cerr<<count<<": "<<full_im_name<<endl;
+		read_lane_file(anno_file_name, anno_lanes, x_factor, y_factor);
+		read_lane_file(detect_file_name, detect_lanes, x_factor, y_factor);
 		tuple_lists[i] = counter.count_im_pair(anno_lanes, detect_lanes);
-		if (show)
-		{
-			auto anno_match = get<0>(tuple_lists[i]);
-			visualize(full_im_name, anno_lanes, detect_lanes, anno_match, width_lane);
-			waitKey(0);
-		}
 	}
-
 	long tp = 0, fp = 0, tn = 0, fn = 0;
   for (auto result: tuple_lists) {
     tp += get<1>(result);
@@ -176,7 +177,7 @@ int main(int argc, char **argv)
 	counter.setTP(tp);
 	counter.setFP(fp);
 	counter.setFN(fn);
-	
+
 	double precision = counter.get_precision();
 	double recall = counter.get_recall();
 	double F = 2 * precision * recall / (precision + recall);	
@@ -197,7 +198,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void read_lane_file(const string &file_name, vector<vector<Point2f> > &lanes)
+void read_lane_file(const string &file_name, vector<vector<Point2f> > &lanes, float x_factor, float y_factor)
 {
 	lanes.clear();
 	ifstream ifs_lane(file_name, ios::in);
@@ -215,7 +216,7 @@ void read_lane_file(const string &file_name, vector<vector<Point2f> > &lanes)
 		double x,y;
 		while(ss>>x>>y)
 		{
-			curr_lane.push_back(Point2f(x, y));
+			curr_lane.push_back(Point2f(x* x_factor, y* y_factor));
 		}
 		lanes.push_back(curr_lane);
 	}

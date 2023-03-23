@@ -1,5 +1,5 @@
-from utils.loss import SoftmaxFocalLoss, ParsingRelationLoss, ParsingRelationDis
-from utils.metrics import MultiLabelAcc, AccTopk, Metric_mIoU
+from utils.loss import SoftmaxFocalLoss, ParsingRelationLoss, ParsingRelationDis, MeanLoss, TokenSegLoss, VarLoss, EMDLoss, RegLoss
+from utils.metrics import MultiLabelAcc, AccTopk, Metric_mIoU, Mae
 from utils.dist_utils import DistSummaryWriter
 
 import torch
@@ -26,40 +26,55 @@ def get_scheduler(optimizer, cfg, iters_per_epoch):
     return scheduler
 
 def get_loss_dict(cfg):
-
-    if cfg.use_aux:
+    if cfg.dataset == 'CurveLanes':
         loss_dict = {
-            'name': ['cls_loss', 'relation_loss', 'aux_loss', 'relation_dis'],
-            'op': [SoftmaxFocalLoss(2), ParsingRelationLoss(), torch.nn.CrossEntropyLoss(), ParsingRelationDis()],
-            'weight': [1.0, cfg.sim_loss_w, 1.0, cfg.shp_loss_w],
-            'data_src': [('cls_out', 'cls_label'), ('cls_out',), ('seg_out', 'seg_label'), ('cls_out',)]
+            'name': ['cls_loss', 'relation_loss', 'relation_dis','cls_loss_col','cls_ext','cls_ext_col', 'mean_loss_row', 'mean_loss_col','var_loss_row', 'var_loss_col', 'lane_token_seg_loss_row', 'lane_token_seg_loss_col'],
+            'op': [SoftmaxFocalLoss(2, ignore_lb=-1), ParsingRelationLoss(), ParsingRelationDis(), SoftmaxFocalLoss(2, ignore_lb=-1), torch.nn.CrossEntropyLoss(),  torch.nn.CrossEntropyLoss(), MeanLoss(), MeanLoss(), VarLoss(cfg.var_loss_power), VarLoss(cfg.var_loss_power), TokenSegLoss(), TokenSegLoss()],
+            'weight': [1.0, cfg.sim_loss_w, cfg.shp_loss_w, 1.0, 1.0, 1.0, cfg.mean_loss_w, cfg.mean_loss_w, 0.01, 0.01, 1.0, 1.0],
+            'data_src': [('cls_out', 'cls_label'), ('cls_out',), ('cls_out',), ('cls_out_col', 'cls_label_col'), 
+            ('cls_out_ext', 'cls_out_ext_label'), ('cls_out_col_ext', 'cls_out_col_ext_label') , ('cls_out', 'cls_label'),('cls_out_col', 'cls_label_col'),('cls_out', 'cls_label'),('cls_out_col', 'cls_label_col'), ('seg_out_row', 'seg_label'), ('seg_out_col', 'seg_label')
+            ],
+        }
+    elif cfg.dataset in ['Tusimple', 'CULane']:
+        loss_dict = {
+            'name': ['cls_loss', 'relation_loss', 'relation_dis','cls_loss_col','cls_ext','cls_ext_col', 'mean_loss_row', 'mean_loss_col'],
+            'op': [SoftmaxFocalLoss(2, ignore_lb=-1), ParsingRelationLoss(), ParsingRelationDis(), SoftmaxFocalLoss(2, ignore_lb=-1), torch.nn.CrossEntropyLoss(),  torch.nn.CrossEntropyLoss(), MeanLoss(), MeanLoss(),],
+            'weight': [1.0, cfg.sim_loss_w, cfg.shp_loss_w, 1.0, 1.0, 1.0, cfg.mean_loss_w, cfg.mean_loss_w,],
+            'data_src': [('cls_out', 'cls_label'), ('cls_out',), ('cls_out',), ('cls_out_col', 'cls_label_col'), 
+            ('cls_out_ext', 'cls_out_ext_label'), ('cls_out_col_ext', 'cls_out_col_ext_label') , ('cls_out', 'cls_label'),('cls_out_col', 'cls_label_col'),
+            ],
         }
     else:
-        loss_dict = {
-            'name': ['cls_loss', 'relation_loss', 'relation_dis'],
-            'op': [SoftmaxFocalLoss(2), ParsingRelationLoss(), ParsingRelationDis()],
-            'weight': [1.0, cfg.sim_loss_w, cfg.shp_loss_w],
-            'data_src': [('cls_out', 'cls_label'), ('cls_out',), ('cls_out',)]
-        }
+        raise NotImplementedError
 
+    
+    if cfg.use_aux:
+        loss_dict['name'].append('seg_loss')
+        loss_dict['op'].append(torch.nn.CrossEntropyLoss(weight = torch.tensor([0.6, 1., 1., 1., 1.])).cuda())
+        loss_dict['weight'].append(1.0)
+        loss_dict['data_src'].append(('seg_out', 'seg_label'))
+
+    assert len(loss_dict['name']) == len(loss_dict['op']) == len(loss_dict['data_src']) == len(loss_dict['weight'])
     return loss_dict
 
 def get_metric_dict(cfg):
 
-    if cfg.use_aux:
-        metric_dict = {
-            'name': ['top1', 'top2', 'top3', 'iou'],
-            'op': [MultiLabelAcc(), AccTopk(cfg.griding_num, 2), AccTopk(cfg.griding_num, 3), Metric_mIoU(cfg.num_lanes+1)],
-            'data_src': [('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('seg_out', 'seg_label')]
-        }
-    else:
-        metric_dict = {
-            'name': ['top1', 'top2', 'top3'],
-            'op': [MultiLabelAcc(), AccTopk(cfg.griding_num, 2), AccTopk(cfg.griding_num, 3)],
-            'data_src': [('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('cls_out', 'cls_label')]
-        }
+    metric_dict = {
+        'name': ['top1', 'top2', 'top3', 'ext_row', 'ext_col'],
+        'op': [AccTopk(-1, 1), AccTopk(-1, 2), AccTopk(-1, 3), MultiLabelAcc(),MultiLabelAcc()],
+        'data_src': [('cls_out', 'cls_label'), ('cls_out', 'cls_label'), ('cls_out', 'cls_label'), 
+        ('cls_out_ext', 'cls_out_ext_label'),('cls_out_col_ext','cls_out_col_ext_label')]
+    }
+    metric_dict['name'].extend(['col_top1', 'col_top2', 'col_top3'])
+    metric_dict['op'].extend([AccTopk(-1, 1), AccTopk(-1, 2), AccTopk(-1, 3),])
+    metric_dict['data_src'].extend([('cls_out_col', 'cls_label_col'), ('cls_out_col', 'cls_label_col'), ('cls_out_col', 'cls_label_col'), ])
 
-    
+    if cfg.use_aux:
+        metric_dict['name'].append('iou')
+        metric_dict['op'].append(Metric_mIoU(5))
+        metric_dict['data_src'].append(('seg_out', 'seg_label'))
+
+    assert len(metric_dict['name']) == len(metric_dict['op']) == len(metric_dict['data_src'])
     return metric_dict
 
 

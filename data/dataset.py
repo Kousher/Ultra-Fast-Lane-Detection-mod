@@ -12,10 +12,11 @@ def loader_func(path):
 
 
 class LaneTestDataset(torch.utils.data.Dataset):
-    def __init__(self, path, list_path, img_transform=None):
+    def __init__(self, path, list_path, img_transform=None, crop_size=None):
         super(LaneTestDataset, self).__init__()
         self.path = path
         self.img_transform = img_transform
+        self.crop_size = crop_size
         with open(list_path, 'r') as f:
             self.list = f.readlines()
         self.list = [l[1:] if l[0] == '/' else l for l in self.list]  # exclude the incorrect path prefix '/' of CULane
@@ -28,6 +29,7 @@ class LaneTestDataset(torch.utils.data.Dataset):
 
         if self.img_transform is not None:
             img = self.img_transform(img)
+        img = img[:,-self.crop_size:,:]
 
         return img, name
 

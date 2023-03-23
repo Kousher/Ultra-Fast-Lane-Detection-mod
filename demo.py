@@ -1,18 +1,65 @@
 import torch, os, cv2
-from model.model import parsingNet
-from utils.common import merge_config
 from utils.dist_utils import dist_print
-import torch
-import scipy.special, tqdm
-import numpy as np
+import torch, os
+from utils.common import merge_config, get_model
+import tqdm
 import torchvision.transforms as transforms
 from data.dataset import LaneTestDataset
-from data.constant import culane_row_anchor, tusimple_row_anchor
 
+def pred2coords(pred, row_anchor, col_anchor, local_width = 1, original_image_width = 1640, original_image_height = 590):
+    batch_size, num_grid_row, num_cls_row, num_lane_row = pred['loc_row'].shape
+    batch_size, num_grid_col, num_cls_col, num_lane_col = pred['loc_col'].shape
+
+    max_indices_row = pred['loc_row'].argmax(1).cpu()
+    # n , num_cls, num_lanes
+    valid_row = pred['exist_row'].argmax(1).cpu()
+    # n, num_cls, num_lanes
+
+    max_indices_col = pred['loc_col'].argmax(1).cpu()
+    # n , num_cls, num_lanes
+    valid_col = pred['exist_col'].argmax(1).cpu()
+    # n, num_cls, num_lanes
+
+    pred['loc_row'] = pred['loc_row'].cpu()
+    pred['loc_col'] = pred['loc_col'].cpu()
+
+    coords = []
+
+    row_lane_idx = [1,2]
+    col_lane_idx = [0,3]
+
+    for i in row_lane_idx:
+        tmp = []
+        if valid_row[0,:,i].sum() > num_cls_row / 2:
+            for k in range(valid_row.shape[1]):
+                if valid_row[0,k,i]:
+                    all_ind = torch.tensor(list(range(max(0,max_indices_row[0,k,i] - local_width), min(num_grid_row-1, max_indices_row[0,k,i] + local_width) + 1)))
+                    
+                    out_tmp = (pred['loc_row'][0,all_ind,k,i].softmax(0) * all_ind.float()).sum() + 0.5
+                    out_tmp = out_tmp / (num_grid_row-1) * original_image_width
+                    tmp.append((int(out_tmp), int(row_anchor[k] * original_image_height)))
+            coords.append(tmp)
+
+    for i in col_lane_idx:
+        tmp = []
+        if valid_col[0,:,i].sum() > num_cls_col / 4:
+            for k in range(valid_col.shape[1]):
+                if valid_col[0,k,i]:
+                    all_ind = torch.tensor(list(range(max(0,max_indices_col[0,k,i] - local_width), min(num_grid_col-1, max_indices_col[0,k,i] + local_width) + 1)))
+                    
+                    out_tmp = (pred['loc_col'][0,all_ind,k,i].softmax(0) * all_ind.float()).sum() + 0.5
+
+                    out_tmp = out_tmp / (num_grid_col-1) * original_image_height
+                    tmp.append((int(col_anchor[k] * original_image_width), int(out_tmp)))
+            coords.append(tmp)
+
+    return coords
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     args, cfg = merge_config()
+    cfg.batch_size = 1
+    print('setting batch_size to 1 for demo generation')
 
     dist_print('start testing...')
     assert cfg.backbone in ['18','34','50','101','152','50next','101next','50wide','101wide']
@@ -24,8 +71,7 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError
 
-    net = parsingNet(pretrained = False, backbone=cfg.backbone,cls_dim = (cfg.griding_num+1,cls_num_per_lane,4),
-                    use_aux=False).cuda() # we dont need auxiliary segmentation in testing
+    net = get_model(cfg)
 
     state_dict = torch.load(cfg.test_model, map_location='cpu')['model']
     compatible_state_dict = {}
@@ -39,20 +85,18 @@ if __name__ == "__main__":
     net.eval()
 
     img_transforms = transforms.Compose([
-        transforms.Resize((288, 800)),
+        transforms.Resize((int(cfg.train_height / cfg.crop_ratio), cfg.train_width)),
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
     if cfg.dataset == 'CULane':
         splits = ['test0_normal.txt', 'test1_crowd.txt', 'test2_hlight.txt', 'test3_shadow.txt', 'test4_noline.txt', 'test5_arrow.txt', 'test6_curve.txt', 'test7_cross.txt', 'test8_night.txt']
-        datasets = [LaneTestDataset(cfg.data_root,os.path.join(cfg.data_root, 'list/test_split/'+split),img_transform = img_transforms) for split in splits]
+        datasets = [LaneTestDataset(cfg.data_root,os.path.join(cfg.data_root, 'list/test_split/'+split),img_transform = img_transforms, crop_size = cfg.train_height) for split in splits]
         img_w, img_h = 1640, 590
-        row_anchor = culane_row_anchor
     elif cfg.dataset == 'Tusimple':
         splits = ['test.txt']
-        datasets = [LaneTestDataset(cfg.data_root,os.path.join(cfg.data_root, split),img_transform = img_transforms) for split in splits]
+        datasets = [LaneTestDataset(cfg.data_root,os.path.join(cfg.data_root, split),img_transform = img_transforms, crop_size = cfg.train_height) for split in splits]
         img_w, img_h = 1280, 720
-        row_anchor = tusimple_row_anchor
     else:
         raise NotImplementedError
     for split, dataset in zip(splits, datasets):
@@ -64,30 +108,13 @@ if __name__ == "__main__":
             imgs, names = data
             imgs = imgs.cuda()
             with torch.no_grad():
-                out = net(imgs)
+                pred = net(imgs)
 
-            col_sample = np.linspace(0, 800 - 1, cfg.griding_num)
-            col_sample_w = col_sample[1] - col_sample[0]
-
-
-            out_j = out[0].data.cpu().numpy()
-            out_j = out_j[:, ::-1, :]
-            prob = scipy.special.softmax(out_j[:-1, :, :], axis=0)
-            idx = np.arange(cfg.griding_num) + 1
-            idx = idx.reshape(-1, 1, 1)
-            loc = np.sum(prob * idx, axis=0)
-            out_j = np.argmax(out_j, axis=0)
-            loc[out_j == cfg.griding_num] = 0
-            out_j = loc
-
-            # import pdb; pdb.set_trace()
             vis = cv2.imread(os.path.join(cfg.data_root,names[0]))
-            for i in range(out_j.shape[1]):
-                if np.sum(out_j[:, i] != 0) > 2:
-                    for k in range(out_j.shape[0]):
-                        if out_j[k, i] > 0:
-                            ppp = (int(out_j[k, i] * col_sample_w * img_w / 800) - 1, int(img_h * (row_anchor[cls_num_per_lane-1-k]/288)) - 1 )
-                            cv2.circle(vis,ppp,5,(0,255,0),-1)
+            coords = pred2coords(pred, cfg.row_anchor, cfg.col_anchor, original_image_width = img_w, original_image_height = img_h)
+            for lane in coords:
+                for coord in lane:
+                    cv2.circle(vis,coord,5,(0,255,0),-1)
             vout.write(vis)
         
         vout.release()

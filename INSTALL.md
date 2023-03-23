@@ -3,8 +3,8 @@
 1. Clone the project
 
     ```Shell
-    git clone https://github.com/cfzd/Ultra-Fast-Lane-Detection
-    cd Ultra-Fast-Lane-Detection
+    git clone https://github.com/cfzd/Ultra-Fast-Lane-Detection-V2
+    cd Ultra-Fast-Lane-Detection-V2
     ```
 
 2. Create a conda virtual environment and activate it
@@ -18,16 +18,24 @@
 
     ```Shell
     # If you dont have pytorch
-    conda install pytorch torchvision cudatoolkit=10.1 -c pytorch 
+    conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 
     pip install -r requirements.txt
+
+    pip install --extra-index-url https://developer.download.nvidia.com/compute/redist --upgrade nvidia-dali-cuda110
+    # Install Nvidia DALI (Very fast data loading lib))
+
+    cd my_interp
+
+    sh build.sh
+    # If this fails, you might need to upgrade your GCC to v7.3.0
     ```
 
 4. Data preparation
-
-    Download [CULane](https://xingangpan.github.io/projects/CULane.html) and [Tusimple](https://github.com/TuSimple/tusimple-benchmark/issues/3). Then extract them to `$CULANEROOT` and `$TUSIMPLEROOT`. The directory arrangement of Tusimple should look like:
+    #### **4.1 Tusimple dataset**
+    Download [CULane](https://xingangpan.github.io/projects/CULane.html), [Tusimple](https://github.com/TuSimple/tusimple-benchmark/issues/3), or [CurveLanes](https://github.com/SoulmateB/CurveLanes) as you want. The directory arrangement of Tusimple should look like(`test_label.json` can be downloaded from [here](https://github.com/TuSimple/tusimple-benchmark/issues/3) ):
     ```
-    $TUSIMPLEROOT
+    $TUSIMPLE
     |──clips
     |──label_data_0313.json
     |──label_data_0531.json
@@ -36,9 +44,17 @@
     |──test_label.json
     |──readme.md
     ```
+    For Tusimple, the segmentation annotation is not provided, hence we need to generate segmentation from the json annotation. 
+
+    ```Shell
+    python scripts/convert_tusimple.py --root /path/to/your/tusimple
+
+    # this will generate segmentations and two list files: train_gt.txt and test.txt
+    ```
+    #### **4.2 CULane dataset**
     The directory arrangement of CULane should look like:
     ```
-    $CULANEROOT
+    $CULANE
     |──driver_100_30frame
     |──driver_161_90frame
     |──driver_182_30frame
@@ -48,12 +64,27 @@
     |──laneseg_label_w16
     |──list
     ```
-    
-    For Tusimple, the segmentation annotation is not provided, hence we need to generate segmentation from the json annotation. 
-
+    For CULane, please run:
     ```Shell
-    python scripts/convert_tusimple.py --root $TUSIMPLEROOT
-    # this will generate segmentations and two list files: train_gt.txt and test.txt
+    python scripts/cache_culane_ponits.py --root /path/to/your/culane
+
+    # this will generate a culane_anno_cache.json file containing all the lane annotations, which can be used for speed up training without reading lane segmentation maps
+    ```
+    #### **4.3 CurveLanes dataset**
+    The directory arrangement of CurveLanes should look like:
+    ```
+    $CurveLanes
+    |──test
+    |──train
+    |──valid
+    ```
+    For CurveLanes, please run:
+    ```Shell
+    python scripts/convert_curvelanes.py --root /path/to/your/curvelanes
+
+    python scripts/make_curvelane_as_culane_test.py --root /path/to/your/curvelanes
+
+    # this will also generate a curvelanes_anno_cache_train.json file. Moreover, many .lines.txt file will be generated on the val set to enable CULane style evaluation.
     ```
 
 5. Install CULane evaluation tools (Only required for testing). 

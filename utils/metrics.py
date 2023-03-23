@@ -44,6 +44,7 @@ class MultiLabelAcc():
         self.cnt = 0
         self.correct = 0
     def update(self,predict,target):
+        predict = predict.argmax(1)
         predict,target = converter(predict),converter(target)
         self.cnt += len(predict)
         self.correct += np.sum(predict==target)
@@ -61,16 +62,40 @@ class AccTopk():
         self.cnt = 0
         self.top5_correct = 0
     def update(self,predict,target):
+        predict = predict.argmax(1)
         predict,target = converter(predict),converter(target)
         self.cnt += len(predict)
-        background_idx = (predict == self.background_classes) + (target == self.background_classes)
-        self.top5_correct += np.sum(predict[background_idx] == target[background_idx])
+        background_idx = (target == self.background_classes)
+        # self.top5_correct += np.sum(predict[background_idx] == target[background_idx])
         not_background_idx = np.logical_not(background_idx)
         self.top5_correct += np.sum(np.absolute(predict[not_background_idx]-target[not_background_idx])<self.k)
     def get(self):
         return self.top5_correct * 1.0 / self.cnt
 
+class Mae():
+    def __init__(self, dim_sel, ignore=-1):
+        self.dim_sel = dim_sel
+        self.ignore = ignore
+        self.all_res = []
+    def reset(self):
+        self.all_res = []
+    def update(self,predict,target):
+        # import pdb; pdb.set_trace()
+        predict = predict[..., self.dim_sel]
+        target = target[..., self.dim_sel]
 
+        cls_dim = predict.shape[1]
+        grid = torch.arange(cls_dim, device = predict.device).view(1, cls_dim, 1)
+        predict = predict.softmax(1)
+        predict = (predict * grid).sum(1) / (cls_dim - 1)
+        res = (predict - target).abs()[target!= self.ignore]
+        res = converter(res)
+        if len(res) != 0:
+            self.all_res.append(res)
+    def get(self):
+        if len(self.all_res) == 0:
+            return 1
+        return np.mean(np.concatenate(self.all_res))
 
 def update_metrics(metric_dict, pair_data):
     for i in range(len(metric_dict['name'])):

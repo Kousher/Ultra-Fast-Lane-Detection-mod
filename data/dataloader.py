@@ -56,19 +56,31 @@ def get_train_loader(batch_size, data_root, griding_num, dataset, use_aux, distr
 
     return train_loader, cls_num_per_lane
 
-def get_test_loader(batch_size, data_root,dataset, distributed):
-    img_transforms = transforms.Compose([
-        transforms.Resize((288, 800)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    ])
-    if dataset == 'CULane':
-        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'list/test.txt'),img_transform = img_transforms)
-        cls_num_per_lane = 18
-    elif dataset == 'Tusimple':
-        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'test.txt'), img_transform = img_transforms)
-        cls_num_per_lane = 56
+def get_test_loader(batch_size, data_root,dataset, distributed, crop_ratio, train_width, train_height):
 
+    if dataset == 'CULane':
+        img_transforms = transforms.Compose([
+            transforms.Resize((int(train_height / crop_ratio), train_width)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
+        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'list/test.txt'),img_transform = img_transforms, crop_size=train_height)
+    elif dataset == 'Tusimple':
+        img_transforms = transforms.Compose([
+            transforms.Resize((int(train_height / crop_ratio), train_width)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
+        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'test.txt'), img_transform = img_transforms, crop_size=train_height)
+    elif dataset == 'CurveLanes':
+        img_transforms = transforms.Compose([
+            transforms.Resize((int(train_height / crop_ratio), train_width)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
+        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'valid/valid_for_culane_style.txt'),img_transform = img_transforms, crop_size=train_height)
+    else:
+        raise NotImplementedError
     if distributed:
         sampler = SeqDistributedSampler(test_dataset, shuffle = False)
     else:
