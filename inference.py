@@ -43,13 +43,13 @@ if __name__ == "__main__":
 
     transform_norm = transforms.Compose([
         transforms.ToTensor(), 
-        transforms.Resize((224,224)),
+        transforms.Resize((1600, 320)),
         transforms.Normalize(mean, std)]
     )
 
     img = np.array(Image.open("/kaggle/input/sample-lane-image/pic1.jpg"))
 
-    img = cv2.resize(img, (1600, 320), cv2.INTER_LINEAR)
+    # img = cv2.resize(img, (1600, 320), cv2.INTER_LINEAR)
     
     img_normalized = transform_norm(img).float()
     img_normalized = img_normalized.unsqueeze_(0)
