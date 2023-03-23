@@ -57,8 +57,16 @@ if __name__ == "__main__":
     imgs = img_normalized.cuda()
     with torch.no_grad():
         pred = net(imgs)
-        print("loc_row: ", pred['loc_row'].shape)
-        print("loc_col: ", pred['loc_col'].shape)
-        print("exist_row: ", pred['exist_row'].shape)
-        print("exist_col: ", pred['exist_col'].shape)
-        print(pred)
+        loc_row = pred['loc_row']
+        loc_col = pred['loc_col']
+        exist_row = pred['exist_row']
+        exist_col = pred['exist_col']
+        loc_row_a = loc_row.argmax(1).cpu()
+        loc_col_a = loc_col.argmax(1).cpu()
+        exist_row_a = exist_row.argmax(1).cpu()
+        exist_col_a = exist_col.argmax(1).cpu()
+        print("loc_row: ", loc_row_a.shape)
+        print("loc_col: ", loc_col_a.shape)
+        print("exist_row: ", exist_row_a.shape)
+        print("exist_col: ", exist_col_a.shape)
+        print(exist_col_a)
