@@ -51,6 +51,6 @@ if __name__ == "__main__":
     img_normalized = transform_norm(img).float()
     img_normalized = img_normalized.unsqueeze_(0)
     
-    imgs = imgs.cuda()
+    imgs = normalized.cuda()
     with torch.no_grad():
         pred = net(imgs)
