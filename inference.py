@@ -4,6 +4,7 @@ from evaluation.eval_wrapper import eval_lane
 import torch
 import numpy as np
 from PIL import Image
+import torchvision.transforms as transforms
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
